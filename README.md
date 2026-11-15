@@ -123,7 +123,7 @@ docs/
   README.md        index
   methodology.md   method notes and the bias audit in full
   walkthrough.md   a guided first run, and how to read each output
-original/          the sanitised original research code (read-only)
+original/          the original research code (read-only)
 ```
 
 ## Quick start
@@ -149,10 +149,9 @@ This gives the same table as the default run, and writes `results/summary.csv` a
 
 ## Original research code
 
-[`original/`](original/README.md) holds the code as I first wrote it for this work, sanitised and nothing else:
-client, company and person names replaced, credentials and local paths removed, data files and notebook outputs
-dropped. It is kept so the real work can be read alongside the maintained version. Some of it contains the issues
-described above; comparing the two shows each fix.
+[`original/`](original/README.md) holds the code as I first wrote it for this project. It is kept so you can
+read the first version alongside the maintained one; some of it contains the issues in the audit table above,
+and comparing the two shows each fix.
 
 ## License
 
