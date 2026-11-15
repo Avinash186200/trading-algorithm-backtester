@@ -2,6 +2,12 @@
 
 [![CI](https://github.com/Avinash186200/trading-algorithm-backtester/actions/workflows/ci.yml/badge.svg)](https://github.com/Avinash186200/trading-algorithm-backtester/actions/workflows/ci.yml) ![Python](https://img.shields.io/badge/python-3.11-blue) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
+## What problem this solves
+
+A simple trading rule wins some trades and loses others. If a model could tell, at the moment of entry, which trades are likely to lose, you could skip them. This repo tests that idea honestly: the model only learns from earlier years, the skip rule is fixed before looking at the test years, and costs are charged.
+
+## Overview
+
 I built this to answer one question about a rule-based trading strategy: can a classifier, using only what is known at entry, tell which trades will hit take-profit and which will hit stop-loss, well enough to skip the bad ones after costs?
 
 The original 2021 research ran a base strategy on several FX pairs, long and short, on daily bars. It trained random forest, SVM and neural network models per pair / direction / timeframe, and compared them in lift tables. The trade logs are proprietary and are not in this repo. Everything here runs on a **synthetic trade log with the same columns**, so you can clone it and reproduce every number below.
@@ -16,7 +22,40 @@ The original 2021 research ran a base strategy on several FX pairs, long and sho
 | **Leakage controls** | Scaler inside the pipeline, cutoff fixed by rule (break-even) or from out-of-fold *training* probabilities, embargo at the split, one pre-chosen configuration, noise test in CI |
 | **Status** | Method rebuilt and leak-free on synthetic data. The original real-data results are not published because they were produced with test-set threshold selection (see audit) |
 
+## What you will learn
+
+- How to frame "should I take this trade?" as a binary classification problem with a cost-aware decision rule.
+- How to split time-ordered data without leaking the future: a time split, a purge before the cutoff and an embargo after it.
+- Why scaling and hyper-parameter tuning must happen inside the training data, with time-ordered folds.
+- Why a probability cutoff chosen on the test set is not a result, and two ways to fix the cutoff in advance.
+- Why in-sample probabilities from a random forest are useless for picking a cutoff, and what out-of-fold probabilities are.
+- How to read a lift table, and how to check a model with a planted signal and with pure noise.
+
+## Key concepts
+
+- **Take-profit and stop-loss.** Each trade closes either at a profit target or at a loss limit. Here the label is `Good` (take-profit hit) or `Bad` (stop-loss hit).
+- **R (risk unit).** Profit measured in units of the amount risked. A stop-loss is -1 R; a take-profit is +`TP_Ratio` R.
+- **Reward/risk ratio (RR).** `TP_Ratio`: how many R a winning trade makes.
+- **Break-even probability.** The win rate at which a trade with reward/risk RR makes zero on average: 1 / (RR + 1). At RR = 2 that is 33%.
+- **Time split.** Train on earlier years, test on later years. Never shuffle trades across time.
+- **Purge and embargo.** Drop trades right before and right after the split date, so no trade's outcome straddles the boundary.
+- **Time-ordered cross-validation (`TimeSeriesSplit`).** Tuning folds where each validation block comes after its training block.
+- **Out-of-fold (OOF) probabilities.** Predictions on training rows made by a model that did not see those rows.
+- **Lift (decile) table.** Sort test trades by predicted P(good), cut into ten equal groups, and compare win rates from top to bottom.
+- **Selection bias.** Trying many cutoffs or configurations on the test set and reporting the best one overstates the result.
+
 ## How it works
+
+```mermaid
+flowchart LR
+    A[Trade log<br/>one row per closed trade] --> B[Group by<br/>pair / side / timeframe]
+    B --> C[Time split<br/>purge + embargo<br/>backtest.time_split]
+    C --> D[Tune scaler + model<br/>TimeSeriesSplit on train only<br/>models.tuned_model]
+    D --> E[P good on test trades]
+    E --> F[Cutoff fixed in advance<br/>break-even or OOF quantile]
+    F --> G[Take or skip]
+    G --> H[Win rate and net R<br/>after costs<br/>backtest.summarise]
+```
 
 ```
 trade log ──► time split + embargo ──► tuned pipeline (scaler + model) ──► P(good) ──► cutoff ──► take / skip ──► net R after costs
@@ -32,6 +71,8 @@ trade log ──► time split + embargo ──► tuned pipeline (scaler + mode
 5. **Score** the test years once and compare with taking every trade, after a fixed cost per trade.
 
 ## Results on synthetic data
+
+These numbers come from a synthetic trade log, not real trades. I planted a known signal in two features so there is something to find.
 
 `python scripts/run_backtest.py` (seed 7, 3,000 trades, train 2011-2018, test 2019-2020, break-even rule, cost 0.05 R per trade):
 
@@ -68,10 +109,21 @@ Undersampling of the majority class was applied to training rows only in the ori
 ## Repo layout
 
 ```
-src/tradeclf/    data.py (synthetic log) · models.py (pipelines, grids) · backtest.py (split, cutoff, summary)
-scripts/         run_backtest.py
-tests/           split + embargo, undersampling, break-even, cutoff independence, OOF check, noise test
-docs/            methodology.md
+src/tradeclf/
+  data.py          synthetic closed-trade log with an optional planted signal
+  models.py        scaler + classifier pipelines, small grids, time-ordered tuning
+  backtest.py      time split with purge and embargo, OOF probabilities, cutoff rules,
+                   summary and decile lift
+scripts/
+  run_backtest.py  command-line entry point; prints the summary, writes CSVs with --out
+tests/
+  test_backtest.py split + embargo, undersampling, break-even, cutoff independence,
+                   OOF check, noise test, planted-signal test
+docs/
+  README.md        index
+  methodology.md   method notes and the bias audit in full
+  walkthrough.md   a guided first run, and how to read each output
+original/          the sanitised original research code (read-only)
 ```
 
 ## Quick start
@@ -82,8 +134,18 @@ python -m pytest -q
 python scripts/run_backtest.py                       # synthetic, break-even rule
 python scripts/run_backtest.py --signal 0            # pure noise: no edge
 python scripts/run_backtest.py --rule quantile --keep 0.6
+```
+
+Each run takes a minute or two: it tunes four models on four groups. Your own trade log needs the columns listed under "At a glance". To try the CSV path first, write the synthetic log to a file and run on that:
+
+```bash
+python -c "import sys; sys.path.insert(0, 'src'); from tradeclf.data import make_synthetic_trades; make_synthetic_trades().to_csv('your_trades.csv', index=False)"
 python scripts/run_backtest.py --trades your_trades.csv --train-end-year 2018 --out results
 ```
+
+This gives the same table as the default run, and writes `results/summary.csv` and `results/scored_test_trades.csv`.
+
+[docs/walkthrough.md](docs/walkthrough.md) goes through a first run step by step.
 
 ## Original research code
 
