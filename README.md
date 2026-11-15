@@ -1,10 +1,10 @@
 # Trading Algorithm Backtester: trade-quality classifiers
 
+[![CI](https://github.com/Avinash186200/trading-algorithm-backtester/actions/workflows/ci.yml/badge.svg)](https://github.com/Avinash186200/trading-algorithm-backtester/actions/workflows/ci.yml) ![Python](https://img.shields.io/badge/python-3.11-blue) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 I built this to answer one question about a rule-based trading strategy: can a classifier, using only what is known at entry, tell which trades will hit take-profit and which will hit stop-loss, well enough to skip the bad ones after costs?
 
 The original 2021 research ran a base strategy on several FX pairs, long and short, on daily bars. It trained random forest, SVM and neural network models per pair / direction / timeframe, and compared them in lift tables. The trade logs are proprietary and are not in this repo. Everything here runs on a **synthetic trade log with the same columns**, so you can clone it and reproduce every number below.
-
-[![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
 
 ## At a glance
 
@@ -85,6 +85,15 @@ python scripts/run_backtest.py --rule quantile --keep 0.6
 python scripts/run_backtest.py --trades your_trades.csv --train-end-year 2018 --out results
 ```
 
+## Original research code
+
+[`original/`](original/README.md) holds the code as I first wrote it for this work, sanitised and nothing else:
+client, company and person names replaced, credentials and local paths removed, data files and notebook outputs
+dropped. It is kept so the real work can be read alongside the maintained version. Some of it contains the issues
+described above; comparing the two shows each fix.
+
 ## License
 
 MIT
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and the [CHANGELOG](CHANGELOG.md).
